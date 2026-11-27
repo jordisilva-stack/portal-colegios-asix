@@ -15,6 +15,42 @@ export default function App() {
   const [error, setError] = useState('');
   const [cargando, setCargando] = useState(false);
 
+  // Detectar si venimos redirigidos desde Google OAuth (#access_token=...)
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash) return;
+
+    const params = new URLSearchParams(hash.substring(1));
+    const accessToken = params.get('access_token');
+    const errorDesc = params.get('error_description');
+
+    if (errorDesc) {
+      setError(decodeURIComponent(errorDesc.replace(/\+/g, ' ')));
+      window.history.replaceState(null, '', window.location.pathname);
+      return;
+    }
+
+    if (accessToken) {
+      setCargando(true);
+      fetch(`${API_URL}/auth/v1/user`, {
+        headers: {
+          apikey: ANON_KEY,
+          Authorization: `Bearer ${accessToken}`,
+        },
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error('No se pudo validar la sesión de Google');
+          return res.json();
+        })
+        .then((user) => {
+          setSession({ access_token: accessToken, user });
+          window.history.replaceState(null, '', window.location.pathname);
+        })
+        .catch((err) => setError(err.message))
+        .finally(() => setCargando(false));
+    }
+  }, []);
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
@@ -36,6 +72,12 @@ export default function App() {
     } finally {
       setCargando(false);
     }
+  };
+
+  const handleGoogleLogin = () => {
+    setError('');
+    const redirectTo = encodeURIComponent(window.location.origin);
+    window.location.href = `${API_URL}/auth/v1/authorize?provider=google&redirect_to=${redirectTo}&prompt=select_account`;
   };
 
   useEffect(() => {
@@ -119,6 +161,21 @@ export default function App() {
           <button type="submit" disabled={cargando} style={{ padding: 10, cursor: 'pointer' }}>
             {cargando ? 'Conectando...' : 'Iniciar sesión'}
           </button>
+          <button
+            type="button"
+            onClick={handleGoogleLogin}
+            disabled={cargando}
+            style={{
+              padding: 10,
+              cursor: 'pointer',
+              background: '#fff',
+              color: '#333',
+              border: '1px solid #ccc',
+              fontWeight: 'bold',
+            }}
+          >
+            Continuar con Google
+          </button>
         </form>
         {error && <p style={{ color: 'red', marginTop: 12 }}>{error}</p>}
       </div>
@@ -129,7 +186,9 @@ export default function App() {
     <div style={{ maxWidth: 800, margin: '40px auto', fontFamily: 'sans-serif' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2>Gestión de Recursos del Centro</h2>
-        <button onClick={() => setSession(null)}>Cerrar sesión</button>
+        <button onClick={() => { setSession(null); setRecursos([]); setColegioId(null); }}>
+          Cerrar sesión
+        </button>
       </div>
       <p>Usuario: <strong>{session.user.email}</strong></p>
 
